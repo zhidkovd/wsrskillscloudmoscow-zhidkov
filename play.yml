@@ -1,0 +1,158 @@
+---
+- name: Job
+  hosts: all
+  become: yes
+  vars_files:
+          - /wsr-skillcloud-moscow/Users/privvars.yml
+  tasks:
+          - name: Apt Update
+            apt: update_cache=yes force_apt_get=yes
+
+          - name: Install curl
+            apt:
+                    name: curl
+                    state: present
+
+          - name: Enable UFW
+            ufw:
+                    state: enabled
+                    policy: allow
+
+          - name: Allow ports
+            ufw:
+                    rule: allow
+                    port: "{{ item }}"
+            with_items:
+                    - 80
+                    - 8888
+                    - 1467
+
+          - name: Change line PORT sshd in /etc/ssh/sshd_config
+            lineinfile:
+                    path: /etc/ssh/sshd_config
+                    regexp: '#Port'
+                    line: 'Port 1467'
+                    backrefs: yes
+
+          - name: Change line PublicKeyAuthentication sshd in /etc/ssh/sshd_config
+            lineinfile:
+                    path: /etc/ssh/sshd_config
+                    regexp: '#PubkeyAuthentication'
+                    line: 'PubkeyAuthentication yes'
+                    backrefs: yes
+
+          - name: Add USER "{{ skillcloud.users[0] }}"
+            user:
+                    name: "{{ skillcloud.users[0] }}"
+                    state: present
+                    password: "{{ skillcloud.passwords[0] | password_hash('sha512') }}"
+                    shell: /bin/bash
+                    createhome: yes
+
+          - name: Add USER "{{ skillcloud.users[1] }}"
+            user:
+                    name: "{{ skillcloud.users[1] }}"
+                    state: present
+                    password: "{{ skillcloud.passwords[1] | password_hash('sha512') }}"
+                    shell: /bin/bash
+                    createhome: yes
+
+          - name: Add USER "{{ skillcloud.users[2] }}"
+            user:
+                    name: "{{ skillcloud.users[2] }}"
+                    state: present
+                    password: "{{ skillcloud.passwords[2] | password_hash('sha512') }}"
+                    shell: /bin/bash
+                    createhome: yes
+
+
+          - name: MKDIR .ssh "{{ skillcloud.users[0] }}"
+            file:
+                    path: "/home/{{ skillcloud.users[0] }}/.ssh"
+                    state: directory
+                    owner: "{{ skillcloud.users[0] }}"
+                    group: "{{ skillcloud.users[0] }}"
+                    mode: u+rwx
+
+          - name: MKDIR .ssh "{{ skillcloud.users[1] }}"
+            file:
+                    path: "/home/{{ skillcloud.users[1] }}/.ssh"
+                    state: directory
+                    owner: "{{ skillcloud.users[1] }}"
+                    group: "{{ skillcloud.users[1] }}"
+                    mode: u+rwx
+
+          - name: MKDIR .ssh "{{ skillcloud.users[2] }}"
+            file:
+                    path: "/home/{{ skillcloud.users[2] }}/.ssh"
+                    state: directory
+                    owner: "{{ skillcloud.users[2] }}"
+                    group: "{{ skillcloud.users[2] }}"
+                    mode: u+rwx
+
+          - name: Add public key in authorized file user1
+            lineinfile:
+                    create: true
+                    line: "{{ skillcloud.publickey }}"
+                    dest: "/home/{{ skillcloud.users[0] }}/.ssh/authorized_keys"
+
+          - name: Add public key in authorized file user2
+            lineinfile:
+                    create: true
+                    line: "{{ skillcloud.publickey }}"
+                    dest: "/home/{{ skillcloud.users[1] }}/.ssh/authorized_keys"
+
+          - name: Add public key in authorized file user3
+            lineinfile:
+                    create: true
+                    line: "{{ skillcloud.publickey }}"
+                    dest: "/home/{{ skillcloud.users[2] }}/.ssh/authorized_keys"
+
+
+
+          - name: Copy script to install Docker-ce
+            copy:
+                    src: install-docker.sh
+                    dest: /bin
+                    mode: a+x 
+
+          - name: Run script to install Docker-ce
+            command: '/bin/bash install-docker.sh'
+
+          - name: Copy script to install docker-compose
+            copy:
+                    src: /wsr-skillcloud-moscow/docker-compose.sh
+                    dest: /bin
+                    mode: a+x
+
+          - name: Run cript to install docker-compose
+            command: '/bin/bash docker-compose.sh'
+
+          - name: MKDIR skillcloud-ngsite
+            file:
+                    path: /skillcloud-ngsite
+                    state: directory
+
+          - name: Copy file to destination host in directory /skillcloud-ngsite
+            copy:
+                    src: "{{ item }}" 
+                    dest: /skillcloud-ngsite
+            with_items:
+                    - /wsr-skillcloud-moscow/docker-compose.yml
+                    - /wsr-skillcloud-moscow/Dockerfile-site
+                    - /wsr-skillcloud-moscow/Dockerfile-balance
+                    - /wsr-skillcloud-moscow/index.html
+                    - /wsr-skillcloud-moscow/balance.conf
+
+          - name: Restart sshd
+            systemd:
+                    name: sshd
+                    state: restarted
+
+          - name: Reload UFW
+            ufw:
+                    state: reloaded
+                    policy: allow
+
+          - name: Reboot VM
+            reboot:
